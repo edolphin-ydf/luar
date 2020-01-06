@@ -5,9 +5,8 @@ package luar
 import (
 	"errors"
 	"fmt"
-	"reflect"
-
 	"github.com/aarzilli/golua/lua"
+	"reflect"
 )
 
 // ConvError records a conversion error from value 'From' to value 'To'.
@@ -267,7 +266,7 @@ func callGoFunction(L *lua.State, v reflect.Value, args []reflect.Value) []refle
 	return results
 }
 
-func goToLuaFunction(L *lua.State, v reflect.Value) lua.LuaGoFunction {
+func goToLuaFunction(L *lua.State, v reflect.Value, ignoreFirstParam bool) lua.LuaGoFunction {
 	switch f := v.Interface().(type) {
 	case func(*lua.State) int:
 		return f
@@ -292,7 +291,12 @@ func goToLuaFunction(L *lua.State, v reflect.Value) lua.LuaGoFunction {
 		args := make([]reflect.Value, len(argsT))
 		for i, t := range argsT {
 			val := reflect.New(t)
-			err := LuaToGo(L, i+1, val.Interface())
+			// for struct member func
+			idx := i + 1
+			if ignoreFirstParam {
+				idx++
+			}
+			err := LuaToGo(L, idx, val.Interface())
 			if err != nil {
 				L.RaiseError(fmt.Sprintf("cannot convert Go function argument #%v: %v", i, err))
 			}
@@ -327,6 +331,12 @@ func goToLuaFunction(L *lua.State, v reflect.Value) lua.LuaGoFunction {
 func GoToLua(L *lua.State, a interface{}) {
 	visited := newVisitor(L)
 	goToLua(L, a, false, visited)
+	visited.close()
+}
+
+func GoToLua1(L *lua.State, a interface{}, isMember bool) {
+	visited := newVisitor(L)
+	goToLua1(L, a, false, visited, isMember)
 	visited.close()
 }
 
@@ -372,6 +382,10 @@ func GoToLuaProxy(L *lua.State, a interface{}) {
 }
 
 func goToLua(L *lua.State, a interface{}, proxify bool, visited visitor) {
+	goToLua1(L, a, proxify, visited, false)
+}
+
+func goToLua1(L *lua.State, a interface{}, proxify bool, visited visitor, isMember bool) {
 	var v reflect.Value
 	v, ok := a.(reflect.Value)
 	if !ok {
@@ -380,6 +394,15 @@ func goToLua(L *lua.State, a interface{}, proxify bool, visited visitor) {
 	if !v.IsValid() {
 		L.PushNil()
 		return
+	}
+
+	k := v.Kind()
+	switch k {
+	case reflect.Chan, reflect.Func, reflect.Map, reflect.Ptr, reflect.UnsafePointer, reflect.Interface, reflect.Slice:
+		if v.IsNil() {
+			L.PushNil()
+			return
+		}
 	}
 
 	if v.Kind() == reflect.Interface && !v.IsNil() {
@@ -410,35 +433,35 @@ func goToLua(L *lua.State, a interface{}, proxify bool, visited visitor) {
 
 	switch v.Kind() {
 	case reflect.Float64, reflect.Float32:
-		if proxify && isNewType(v.Type()) {
-			makeValueProxy(L, vp, cNumberMeta)
-		} else {
-			L.PushNumber(v.Float())
-		}
+		//if proxify && isNewType(v.Type()) {
+		//	makeValueProxy(L, vp, cNumberMeta)
+		//} else {
+		L.PushNumber(v.Float())
+		//}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if proxify && isNewType(v.Type()) {
-			makeValueProxy(L, vp, cNumberMeta)
-		} else {
-			L.PushNumber(float64(v.Int()))
-		}
+		//if proxify && isNewType(v.Type()) {
+		//	makeValueProxy(L, vp, cNumberMeta)
+		//} else {
+		L.PushNumber(float64(v.Int()))
+		//}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		if proxify && isNewType(v.Type()) {
-			makeValueProxy(L, vp, cNumberMeta)
-		} else {
-			L.PushNumber(float64(v.Uint()))
-		}
+		//if proxify && isNewType(v.Type()) {
+		//	makeValueProxy(L, vp, cNumberMeta)
+		//} else {
+		L.PushNumber(float64(v.Uint()))
+		//}
 	case reflect.String:
-		if proxify && isNewType(v.Type()) {
-			makeValueProxy(L, vp, cStringMeta)
-		} else {
-			L.PushString(v.String())
-		}
+		//if proxify && isNewType(v.Type()) {
+		//	makeValueProxy(L, vp, cStringMeta)
+		//} else {
+		L.PushString(v.String())
+		//}
 	case reflect.Bool:
-		if proxify && isNewType(v.Type()) {
-			makeValueProxy(L, vp, cInterfaceMeta)
-		} else {
-			L.PushBoolean(v.Bool())
-		}
+		//if proxify && isNewType(v.Type()) {
+		//	makeValueProxy(L, vp, cInterfaceMeta)
+		//} else {
+		L.PushBoolean(v.Bool())
+		//}
 	case reflect.Complex128, reflect.Complex64:
 		makeValueProxy(L, vp, cComplexMeta)
 	case reflect.Array:
@@ -521,7 +544,7 @@ func goToLua(L *lua.State, a interface{}, proxify bool, visited visitor) {
 	case reflect.Chan:
 		makeValueProxy(L, vp, cChannelMeta)
 	case reflect.Func:
-		L.PushGoFunction(goToLuaFunction(L, v))
+		L.PushGoFunction(goToLuaFunction(L, v, isMember))
 	default:
 		if val, ok := v.Interface().(error); ok {
 			L.PushString(val.Error())
@@ -747,6 +770,8 @@ func LuaToGo(L *lua.State, idx int, a interface{}) error {
 	return luaToGo(L, idx, v, map[uintptr]reflect.Value{})
 }
 
+var typeOfReflectValue = reflect.TypeOf(reflect.Value{})
+
 func luaToGo(L *lua.State, idx int, v reflect.Value, visited map[uintptr]reflect.Value) error {
 	// Derefence 'v' until a non-pointer.
 	// This initializes the values, which will be useless effort if the conversion
@@ -767,30 +792,46 @@ func luaToGo(L *lua.State, idx int, v reflect.Value, visited map[uintptr]reflect
 	case lua.LUA_TNIL:
 		v.Set(reflect.Zero(v.Type()))
 	case lua.LUA_TBOOLEAN:
-		if kind != reflect.Bool && kind != reflect.Interface {
-			return ConvError{From: luaDesc(L, idx), To: v.Type()}
+		if v.Type() == typeOfReflectValue {
+			v.Set(reflect.ValueOf(reflect.ValueOf(L.ToBoolean(idx))))
+		} else {
+			if kind != reflect.Bool && kind != reflect.Interface {
+				return ConvError{From: luaDesc(L, idx), To: v.Type()}
+			}
+			v.Set(reflect.ValueOf(L.ToBoolean(idx)))
 		}
-		v.Set(reflect.ValueOf(L.ToBoolean(idx)))
 	case lua.LUA_TNUMBER:
-		switch k := unsizedKind(v); k {
-		case reflect.Int64, reflect.Uint64, reflect.Float64, reflect.Interface:
-			// We do not use ToInteger as it may truncate the value. Let Go truncate
-			// instead in Convert().
-			f := reflect.ValueOf(L.ToNumber(idx))
-			v.Set(f.Convert(v.Type()))
-		case reflect.Complex128:
-			v.SetComplex(complex(L.ToNumber(idx), 0))
-		default:
-			return ConvError{From: luaDesc(L, idx), To: v.Type()}
+		if v.Type() == typeOfReflectValue {
+			v.Set(reflect.ValueOf(reflect.ValueOf(L.ToNumber(idx))))
+		} else {
+			switch k := unsizedKind(v); k {
+			case reflect.Int64, reflect.Uint64, reflect.Float64, reflect.Interface:
+				// We do not use ToInteger as it may truncate the value. Let Go truncate
+				// instead in Convert().
+				f := reflect.ValueOf(L.ToNumber(idx))
+				v.Set(f.Convert(v.Type()))
+			case reflect.Complex128:
+				v.SetComplex(complex(L.ToNumber(idx), 0))
+			default:
+				return ConvError{From: luaDesc(L, idx), To: v.Type()}
+			}
 		}
 	case lua.LUA_TSTRING:
-		if kind != reflect.String && kind != reflect.Interface {
-			return ConvError{From: luaDesc(L, idx), To: v.Type()}
+		if v.Type() == typeOfReflectValue {
+			v.Set(reflect.ValueOf(reflect.ValueOf(L.ToString(idx))))
+		} else {
+			if kind != reflect.String && kind != reflect.Interface {
+				return ConvError{From: luaDesc(L, idx), To: v.Type()}
+			}
+			v.Set(reflect.ValueOf(L.ToString(idx)))
 		}
-		v.Set(reflect.ValueOf(L.ToString(idx)))
 	case lua.LUA_TUSERDATA:
 		if isValueProxy(L, idx) {
 			val, typ := valueOfProxy(L, idx)
+			if v.Type() == reflect.TypeOf(reflect.Value{}) {
+				v.Set(reflect.ValueOf(val))
+				return nil
+			}
 			if val.Interface() == Null {
 				// Special case for Null.
 				v.Set(reflect.Zero(v.Type()))
@@ -956,4 +997,9 @@ func Register(L *lua.State, table string, values Map) {
 // Closest we'll get to a typeof operator.
 func typeof(a interface{}) reflect.Type {
 	return reflect.TypeOf(a).Elem()
+}
+
+// new type and push to top of stack
+func NewType(L *lua.State, value interface{}) {
+	makeValueProxy(L, reflect.ValueOf(reflect.TypeOf(value)), cTypeMeta)
 }

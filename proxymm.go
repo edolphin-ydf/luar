@@ -534,7 +534,7 @@ func struct__index(L *lua.State) int {
 	field := v.FieldByName(name)
 	if !field.IsValid() || !field.CanSet() {
 		// No such exported field, try for method.
-		pushGoMethod(L, name, vp)
+		pushGoMethod1(L, name, vp, true)
 	} else {
 		GoToLuaProxy(L, field)
 	}
@@ -558,4 +558,34 @@ func struct__newindex(L *lua.State) int {
 	}
 	field.Set(val.Elem())
 	return 0
+}
+
+func type_call(L *lua.State) int {
+	v, _ := valueOfProxy(L, 1)
+	t := v.Interface().(reflect.Type)
+
+	var res reflect.Value
+	switch t.Kind() {
+	case reflect.Map:
+		res = reflect.MakeMap(t)
+	case reflect.Slice:
+		length := L.OptInteger(2, 0)
+		capacity := L.OptInteger(3, length)
+
+		if length < 0 {
+			L.ArgError(2, "negative length")
+		}
+		if capacity < 0 {
+			L.ArgError(3, "negative capacity")
+		}
+		if length > capacity {
+			L.RaiseError("length > capacity")
+		}
+
+		res = reflect.MakeSlice(t, length, capacity)
+	default:
+		res = reflect.New(t)
+	}
+	GoToLuaProxy(L, res.Interface())
+	return 1
 }

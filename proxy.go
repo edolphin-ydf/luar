@@ -25,6 +25,7 @@ const (
 	cStructMeta    = "structMT"
 	cInterfaceMeta = "interfaceMT"
 	cChannelMeta   = "channelMT"
+	cTypeMeta      = "typeMT"
 )
 
 var (
@@ -153,13 +154,17 @@ func makeValueProxy(L *lua.State, v reflect.Value, proxyMT string) {
 			L.NewMetaTable(proxyMT)
 			L.SetMetaMethod("__index", channel__index)
 			flagValue()
+		case cTypeMeta:
+			L.NewMetaTable(proxyMT)
+			L.SetMetaMethod("__call", type_call)
+			flagValue()
 		}
 	}
 
 	proxymu.Lock()
 	id := proxyIdCounter
 	proxyIdCounter++
-	proxyMap[id] = &valueProxy{ v: v, t: v.Type() }
+	proxyMap[id] = &valueProxy{v: v, t: v.Type()}
 	proxymu.Unlock()
 
 	L.Pop(1)
@@ -168,8 +173,11 @@ func makeValueProxy(L *lua.State, v reflect.Value, proxyMT string) {
 	L.LGetMetaTable(proxyMT)
 	L.SetMetaTable(-2)
 }
-
 func pushGoMethod(L *lua.State, name string, v reflect.Value) {
+	pushGoMethod1(L, name, v, false)
+}
+
+func pushGoMethod1(L *lua.State, name string, v reflect.Value, isMember bool) {
 	method := v.MethodByName(name)
 	if !method.IsValid() {
 		t := v.Type()
@@ -191,7 +199,7 @@ func pushGoMethod(L *lua.State, name string, v reflect.Value) {
 			return
 		}
 	}
-	GoToLua(L, method)
+	GoToLua1(L, method, isMember)
 }
 
 // pushNumberValue pushes the number resulting from an arithmetic operation.
