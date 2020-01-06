@@ -83,6 +83,9 @@ func makeValueProxy(L *lua.State, v reflect.Value, proxyMT string) {
 	// The metatable needs be set up in the Lua state before the proxy is created,
 	// otherwise closing the state will fail on calling the garbage collector. Not
 	// really sure why this happens though...
+	if userDefinedMT, ok := typeMtMap[v.Type()]; ok {
+		proxyMT = userDefinedMT
+	}
 	L.LGetMetaTable(proxyMT)
 	if L.IsNil(-1) {
 		flagValue := func() {

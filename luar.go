@@ -1003,3 +1003,25 @@ func typeof(a interface{}) reflect.Type {
 func NewType(L *lua.State, value interface{}) {
 	makeValueProxy(L, reflect.ValueOf(reflect.TypeOf(value)), cTypeMeta)
 }
+
+var typeMtMap = make(map[reflect.Type]string)
+
+// new user defined mt, don't change the stack
+func NewMT(L *lua.State, typ reflect.Type, name string, mtMap map[string]lua.LuaGoFunction) {
+	L.LGetMetaTable(name)
+	if L.IsNil(-1) {
+		L.Pop(1)
+		L.NewMetaTable(name)
+	}
+
+	for mmName, f := range mtMap {
+		L.SetMetaMethod(mmName, f)
+	}
+
+	L.SetMetaMethod("__gc", proxy__gc)
+	L.PushBoolean(true)
+	L.SetField(-2, "luago.value")
+	L.Pop(1)
+
+	typeMtMap[typ] = name
+}
