@@ -16,6 +16,10 @@ type valueProxy struct {
 	t reflect.Type
 }
 
+var valueProxyPool = sync.Pool{New: func() interface{} {
+	return &valueProxy{}
+}}
+
 const (
 	cNumberMeta    = "numberMT"
 	cComplexMeta   = "complexMT"
@@ -167,7 +171,10 @@ func makeValueProxy(L *lua.State, v reflect.Value, proxyMT string) {
 	proxymu.Lock()
 	id := proxyIdCounter
 	proxyIdCounter++
-	proxyMap[id] = &valueProxy{v: v, t: v.Type()}
+	vp := valueProxyPool.Get().(*valueProxy)
+	vp.v = v
+	vp.t = v.Type()
+	proxyMap[id] = vp
 	proxymu.Unlock()
 
 	L.Pop(1)

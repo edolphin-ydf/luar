@@ -333,6 +333,10 @@ func proxy__eq(L *lua.State) int {
 func proxy__gc(L *lua.State) int {
 	proxyId := *(*uintptr)(L.ToUserdata(1))
 	proxymu.Lock()
+	if vp, ok := proxyMap[proxyId]; ok {
+		valueProxyPool.Put(vp)
+	}
+
 	delete(proxyMap, proxyId)
 	proxymu.Unlock()
 	return 0
