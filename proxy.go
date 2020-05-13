@@ -87,8 +87,8 @@ func makeValueProxy(L *lua.State, v reflect.Value, proxyMT string) {
 	// The metatable needs be set up in the Lua state before the proxy is created,
 	// otherwise closing the state will fail on calling the garbage collector. Not
 	// really sure why this happens though...
-	if userDefinedMT, ok := typeMtMap[v.Type()]; ok {
-		proxyMT = userDefinedMT
+	if userDefinedMT, ok := typeMtMap.Load(v.Type()); ok {
+		proxyMT = userDefinedMT.(string)
 	}
 	L.LGetMetaTable(proxyMT)
 	if L.IsNil(-1) {
@@ -263,6 +263,10 @@ func unsizedKind(v reflect.Value) reflect.Kind {
 		return reflect.Complex128
 	}
 	return v.Kind()
+}
+
+func ValueOfProxy(L *lua.State, idx int) (reflect.Value, reflect.Type) {
+	return valueOfProxy(L, idx)
 }
 
 func valueOfProxy(L *lua.State, idx int) (reflect.Value, reflect.Type) {

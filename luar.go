@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/aarzilli/golua/lua"
 	"reflect"
+	"sync"
 )
 
 // ConvError records a conversion error from value 'From' to value 'To'.
@@ -1004,7 +1005,8 @@ func NewType(L *lua.State, value interface{}) {
 	makeValueProxy(L, reflect.ValueOf(reflect.TypeOf(value)), cTypeMeta)
 }
 
-var typeMtMap = make(map[reflect.Type]string)
+//var typeMtMap = make(map[reflect.Type]string)
+var typeMtMap = sync.Map{}
 
 // new user defined mt, don't change the stack
 func NewMT(L *lua.State, typ reflect.Type, name string, mtMap map[string]lua.LuaGoFunction) {
@@ -1023,5 +1025,5 @@ func NewMT(L *lua.State, typ reflect.Type, name string, mtMap map[string]lua.Lua
 	L.SetField(-2, "luago.value")
 	L.Pop(1)
 
-	typeMtMap[typ] = name
+	typeMtMap.Store(typ, name)
 }
